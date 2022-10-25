@@ -18,6 +18,5 @@ cache/F-F_Research_Data_Factors.csv
 cache/wrds_tickers.csv
 cache/gurobi.csv
 *.csv
-*.pkl
-cache/
+
 
