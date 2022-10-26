@@ -3,6 +3,7 @@ from sympy import Symbol
 import numpy as np
 from scipy.stats.mstats import gmean
 import pandas as pd
+import matplotlib.pyplot as plt
 
 sign = lambda a: int((a > 0)) - int((a < 0))
 
@@ -274,7 +275,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
         model_instance.SVM_.exogenous = Y_out
         mvo_cons = []
         svm_cons = []
-
+        w_prev = None
         if i > 0:  # not the first trade gets a constraint on turnover
             # turnover constraint
             x_prev = model_instance.MVO_.x.X
@@ -284,8 +285,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             # policy constraint
             w_mabs = (i / (i + 1)) * w_mabs + (1 / (i + 1)) * np.abs(model_instance.SVM_.w.x).mean()
 
-            w_prev = model_instance.SVM_.w.x
-            b_prev = model_instance.SVM_.b.x
+
 
             # portfolio turnover constraints
             model_instance.MVO_.define_turnover(x_prev, np.ones_like(x_prev), turnover_limit, 1)
@@ -293,13 +293,16 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
 
             # epsilon allows change if w is 0
             if lr is not None:
-                svm_cons.append(
-                    model_instance.SVM_.w <= w_prev + lr * w_mabs)  # 'iter constraint 1'
-                svm_cons.append(
-                    model_instance.SVM_.w >= w_prev - lr * w_mabs)  # 'iter constraint 2'
+                w_prev = model_instance.SVM_.w.x
+                b_prev = model_instance.SVM_.b.x
+                # svm_cons.append(
+                #     model_instance.SVM_.w <= w_prev + lr * w_mabs)  # 'iter constraint 1'
+                # svm_cons.append(
+                #     model_instance.SVM_.w >= w_prev - lr * w_mabs)  # 'iter constraint 2'
 
         try:
-            model_instance.initialize_soln(constrs=mvo_cons, svm_constrs=svm_cons, warm_starts=warm_starts)
+            model_instance.initialize_soln(constrs=mvo_cons, svm_constrs=svm_cons,
+                                           warm_starts=warm_starts, delta=lr, w_prev_soln=w_prev)
         except:
             print("Begin Relaxation")
         k = 1
@@ -313,7 +316,8 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             model_instance.MVO_.ret_constr = ret_constr
             model_instance.MVO_.ret_target[0].rhs = ret_constr
             try:
-                model_instance.initialize_soln(constrs=mvo_cons, svm_constrs=svm_cons, warm_starts=warm_starts)
+                model_instance.initialize_soln(constrs=mvo_cons, svm_constrs=svm_cons,
+                                               warm_starts=warm_starts, delta=lr, w_prev_soln=w_prev)
             except:
                 print("Try to Relax Again")
             k = k + 1
@@ -321,7 +325,8 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
         # model_instance.silence_output()
         try:
             ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist = \
-                model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons)
+                model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
+                                         delta=lr, w_prev_soln=w_prev)
         except:
             print("Begin Relaxation")
         k = 1
@@ -336,7 +341,8 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             model_instance.MVO_.ret_target[0].rhs = ret_constr
             try:
                 ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist  = \
-                    model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons)
+                    model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
+                                             delta=lr, w_prev_soln=w_prev)
             except:
                 print("Try to Relax Again")
             if k > 3: #only try to relax a couple times
@@ -344,7 +350,8 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
                 model_instance.MVO_.ret_target[0].rhs = -1
                 print("giving up ...  MVP")
                 ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist  = \
-                    model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons)
+                    model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
+                                             delta=lr, w_prev_soln=w_prev)
                 break
             k = k + 1
 
@@ -377,18 +384,10 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             print("_" * 25)
             print("Iteration ", i)
             print("Percent Complete ", i / T)
+            print(model_instance.w)
         i = i + 1
 
     portfolio_weights = pd.DataFrame(portfolio_weights, index=rets.index[:T], columns=model_instance.tics)
     oot_returns = pd.Series(oot_returns, index=rets.index[:T])
     market = pd.Series(market, index=rets.index[:T])
     return (portfolio_weights, oot_returns, market, wis, bias, soln_mods, times)
-
-
-
-def padm_data_treatment_exp2(Y):
-    Y.INV1 = -1*Y.INV1
-    # Y['Momentum'] = wrds_tics.Momentum
-    #restrict the wharton research data to the columns of interest
-    Y_ =  (Y - Y.mean(axis=0))/(Y.std(axis=0)) #scale the features
-    return Y_

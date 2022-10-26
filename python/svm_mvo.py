@@ -532,6 +532,12 @@ class SVM:
     def svm_margin(self):
         return (1 / 2) * (self.w @ self.w)
 
+    def svm_change(self, w_prev):
+        n, m = self.exogenous.shape
+        w_diff = self.model.addMVar(m)
+        self.model.addConstr(w_diff == self.w - w_prev)
+        return (1 / 2) * (w_diff @ w_diff)
+
     def print_var_info(self, names=None):
         # dictionary of variables and thier names
         if names is None:
@@ -543,7 +549,7 @@ class SVM:
         print("xi", self.xi.X)
         print("")
 
-    def set_model(self, svm_constrs=None):
+    def set_model(self, svm_constrs=None, delta=0, w_prev_soln=None):
         # remove constraints
         if svm_constrs is None:
             svm_constrs = []
@@ -558,18 +564,26 @@ class SVM:
             for con in svm_constrs:
                 self.model.addConstr(con, 'target')
 
+        if w_prev_soln is not None:
+            hyperplane_penalty = (1-delta)*self.svm_margin + delta*self.svm_change(w_prev_soln)
+        else:
+            hyperplane_penalty = self.svm_margin
+
         if type(self.soft_margin) is np.ndarray and np.max(self.soft_margin) > 10 ** 6:  # not the first solve
             big_penalty = np.max(self.soft_margin)
             normalized_margin = self.soft_margin / big_penalty
             print("big penalty mode")
-            self.model.setObjective((1 / big_penalty) * self.svm_margin + (1 / n) * normalized_margin[:, 0] @ self.xi,
+            self.model.setObjective((1 / big_penalty) * hyperplane_penalty +
+                                    (1 / n) * normalized_margin[:, 0] @ self.xi,
                                     GRB.MINIMIZE)
         elif type(self.soft_margin) is not np.ndarray and self.soft_margin > 10 ** 6:
             big_penalty = self.soft_margin
             print("big penalty mode")
-            self.model.setObjective((1 / big_penalty) * self.svm_margin + (1 / n) * (self.xi.sum()), GRB.MINIMIZE)
+            self.model.setObjective((1 / big_penalty) * hyperplane_penalty +
+                                    (1 / n) * (self.xi.sum()), GRB.MINIMIZE)
         else:
-            self.model.setObjective(self.svm_margin + self.soft_penalty, GRB.MINIMIZE)
+            self.model.setObjective(hyperplane_penalty +
+                                    self.soft_penalty, GRB.MINIMIZE)
 
         for i in range(n):
             y_i = self.exogenous.iloc[i].values
@@ -683,7 +697,7 @@ class SVM_MVO_ADM:
     def objective_mvo(self):
         return self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty_mvo.getValue()
 
-    def initialize_soln(self, set_return=True, constrs=None, svm_constrs=None, warm_starts=None):
+    def initialize_soln(self, set_return=True, constrs=None, svm_constrs=None, warm_starts=None, delta=0, w_prev_soln=None):
         if svm_constrs is None:
             svm_constrs = []
         if constrs is None:
@@ -694,10 +708,10 @@ class SVM_MVO_ADM:
         if self.MVO_.model.status == 4:
             return  # return threshold must be reduced
         self.SVM_.mvo_z = self.MVO_.z.x
-        self.SVM_.set_model(svm_constrs)
+        self.SVM_.set_model(svm_constrs, delta, w_prev_soln)
         self.SVM_.optimize()
 
-    def solve_adm(self, store_data=True, set_return=True, constrs=None, svm_constrs=None):
+    def solve_adm(self, store_data=True, set_return=True, constrs=None, svm_constrs=None, delta=0, w_prev_soln=None):
         if svm_constrs is None:
             svm_constrs = []
         if constrs is None:
@@ -722,7 +736,8 @@ class SVM_MVO_ADM:
 
             while (i <= self.IterLim) and (not converged):
                 w_prev = self.SVM_.w.x
-
+                x_prev = self.MVO_.x.x
+                z_prev = self.MVO_.z.x
                 if store_data:
                     ws.append(self.SVM_.w.x)
                     xs.append(self.MVO_.x.x)
@@ -735,11 +750,11 @@ class SVM_MVO_ADM:
                 self.MVO_.svm_b = self.SVM_.b.x
                 self.MVO_.svm_w = self.SVM_.w.x
 
-                self.MVO_.set_model(set_return, constrs)
+                self.MVO_.set_model(set_return, constrs, warm_starts=[x_prev, z_prev])
                 self.MVO_.optimize()
 
                 self.SVM_.mvo_z = self.MVO_.z.x
-                self.SVM_.set_model(svm_constrs)
+                self.SVM_.set_model(svm_constrs, delta, w_prev_soln)
                 self.SVM_.optimize()
                 i += 1
 
