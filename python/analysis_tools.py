@@ -286,9 +286,13 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             w_mabs = (i / (i + 1)) * w_mabs + (1 / (i + 1)) * np.abs(model_instance.SVM_.w.x).mean()
 
 
-
             # portfolio turnover constraints
-            model_instance.MVO_.define_turnover(x_prev, np.ones_like(x_prev), turnover_limit, 1)
+            for v, absv, curr in zip(model_instance.MVO_.x.tolist(), model_instance.MVO_.abs.tolist(), x_prev.tolist()):
+                mvo_cons.append(absv >= v - curr)
+                mvo_cons.append(absv >= curr - v)
+                # q = cost*1/np.maximum(1, Prices)
+            q = 1 * 1 / np.maximum(1, np.ones_like(x_prev))
+            mvo_cons.append(model_instance.MVO_.abs @ q <= turnover_limit)
             # add constraints on w
 
             # epsilon allows change if w is 0
