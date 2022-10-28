@@ -615,10 +615,12 @@ def check_partial_min(instance, w_prev):
            or (instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9))
 
 
-def check_global_convergence(instance, w_param_init, z_param_init = None, change_threshold = 0.2):
+def check_global_convergence(instance, w_param_init, z_param_init = None, x_param_init = None, change_threshold = 0.2):
     """checks for global convergence"""
     if z_param_init is not None:
-        z_changed = np.abs(instance.MVO_.z.x - z_param_init).sum()/len(z_param_init) > change_threshold
+        big_x_old = (x_param_init > 1e-4).astype(int)
+        big_x_new = (instance.MVO_.x.x > 1e-4).astype(int)
+        z_changed = np.abs(big_x_old - big_x_new).sum()/len(z_param_init) > change_threshold
     else:
         z_changed = False
     allg0 = np.all(w_param_init > 10 ** (-12))
@@ -732,6 +734,7 @@ class SVM_MVO_ADM:
         start = time.time()
         end = time.time()
         z_param_init = self.MVO_.z.x
+        x_param_init = self.MVO_.x.x
         for k in range(self.ParamLim):
 
             i, converged = (0, False)
@@ -776,7 +779,7 @@ class SVM_MVO_ADM:
                         penalty_hist.append(self.SVM_.soft_margin)
                 end = time.time()
 
-            if check_global_convergence(self, w_param_init, z_param_init):
+            if check_global_convergence(self, w_param_init, z_param_init, x_param_init):
                 print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
                 break
 
