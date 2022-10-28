@@ -11,7 +11,7 @@ sign = lambda a: int((a > 0)) - int((a < 0))
 def getline(ws, xu, yu, xl, yl):
     x = Symbol('x')
     y = Symbol('y')
-    epsi = 10 ** (-9)
+    epsi = 10 ** (-12)
 
     if abs(ws[0]) >= epsi and abs(ws[1]) >= epsi:
         try:

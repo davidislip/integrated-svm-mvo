@@ -534,7 +534,7 @@ class SVM:
 
     def svm_change(self, w_prev):
         n, m = self.exogenous.shape
-        w_diff = self.model.addMVar(m)
+        w_diff = self.model.addMVar(m, lb = -1*GRB.INFINITY)
         self.model.addConstr(w_diff == self.w - w_prev)
         return (1 / 2) * (w_diff @ w_diff)
 
@@ -615,12 +615,16 @@ def check_partial_min(instance, w_prev):
            or (instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9))
 
 
-def check_global_convergence(instance, w_param_init):
+def check_global_convergence(instance, w_param_init, z_param_init = None, change_threshold = 0.2):
     """checks for global convergence"""
+    if z_param_init is not None:
+        z_changed = np.abs(instance.MVO_.z.x - z_param_init).sum()/len(z_param_init) > change_threshold
+    else:
+        z_changed = False
     allg0 = np.all(w_param_init > 10 ** (-12))
     relative_diff = np.all(np.abs((instance.SVM_.w.x - w_param_init) / w_param_init) < 0.05)
     return (np.abs(instance.SVM_.w.x - w_param_init).sum() < 10 ** (-12) or (allg0 and relative_diff)) \
-           and instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9)
+           and instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9) or z_changed
 
 
 def get_multiplier(instance):
@@ -727,7 +731,7 @@ class SVM_MVO_ADM:
         objectives_svm, objectives_mvo = ([], [])
         start = time.time()
         end = time.time()
-
+        z_param_init = self.MVO_.z.x
         for k in range(self.ParamLim):
 
             i, converged = (0, False)
@@ -772,8 +776,8 @@ class SVM_MVO_ADM:
                         penalty_hist.append(self.SVM_.soft_margin)
                 end = time.time()
 
-            if check_global_convergence(self, w_param_init):
-                print("ADM terminated with C = ", self.SVM_.soft_margin)
+            if check_global_convergence(self, w_param_init, z_param_init):
+                print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
                 break
 
             mult = get_multiplier(self)
