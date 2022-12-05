@@ -492,10 +492,8 @@ class MVO:
 
 
 class SVM:
-    # This class models the support vector machine subproblem in the ADM method
-
+    # This class models the support vector machine sub problem in the ADM method
     big_m = 100
-
     # noinspection PyTypeChecker
     def __init__(self, tics, exogenous, soft_margin, mvo_z=None, non_neg=True, epsilon=0.001):
         self.tics = tics  # list of tickers
@@ -615,12 +613,12 @@ def check_partial_min(instance, w_prev):
            or (instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9))
 
 
-def check_global_convergence(instance, w_param_init, z_param_init = None, x_param_init = None, change_threshold = 0.2):
+def check_global_convergence(instance, w_param_init, z_param_init=None, x_param_init=None):
     """checks for global convergence"""
     if z_param_init is not None:
         big_x_old = (x_param_init > 1e-4).astype(int)
         big_x_new = (instance.MVO_.x.x > 1e-4).astype(int)
-        z_changed = np.abs(big_x_old - big_x_new).sum()/len(z_param_init) > change_threshold
+        z_changed = np.abs(big_x_old - big_x_new).sum()/len(z_param_init) > instance.change_threshold
     else:
         z_changed = False
     allg0 = np.all(w_param_init > 10 ** (-12))
@@ -662,7 +660,8 @@ class SVM_MVO_ADM:
         self.b = None
         self.xi_svm = None
         self.xi_mvo = None
-
+        self.track_change = False
+        self.change_threshold = 1
     @property
     def describe(self):
         desc = "SVM MVO with Alternating Direction Method"
@@ -717,7 +716,8 @@ class SVM_MVO_ADM:
         self.SVM_.set_model(svm_constrs, delta, w_prev_soln)
         self.SVM_.optimize()
 
-    def solve_adm(self, store_data=True, set_return=True, constrs=None, svm_constrs=None, delta=0, w_prev_soln=None):
+    def solve_adm(self, store_data=True, set_return=True, constrs=None, svm_constrs=None, delta=0,
+                  w_prev_soln=None):
         if svm_constrs is None:
             svm_constrs = []
         if constrs is None:
@@ -779,14 +779,17 @@ class SVM_MVO_ADM:
                         penalty_hist.append(self.SVM_.soft_margin)
                 end = time.time()
 
-            if check_global_convergence(self, w_param_init, z_param_init, x_param_init):
-                print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
-                break
-
+            if self.track_change:
+                if check_global_convergence(self, w_param_init, z_param_init, x_param_init):
+                    print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
+                    break
+            else:
+                if check_global_convergence(self, w_param_init):
+                    print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
+                    break
             mult = get_multiplier(self)
             self.SVM_.soft_margin, self.MVO_.soft_margin = (self.SVM_.soft_margin * mult, self.MVO_.soft_margin * mult)
-            #print("outer iteration ", k)
-            #print(np.max(self.SVM_.soft_margin))
+
 
         self.x = self.MVO_.x
         self.z = self.MVO_.z
@@ -891,7 +894,6 @@ class SVM_MVO_ADM:
         return (frontier, ws, xis)
 
 
-# v2 only updates the penalties for the assets that are not SVM constrained
 class SVM_MVO_ADM_v2:
     # '''this class models the integrated SVM MVO problem using the ADM solution method'''
     big_m = 100
