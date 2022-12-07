@@ -629,9 +629,10 @@ def check_global_convergence(instance, w_param_init, z_param_init=None, x_param_
     else:
         z_changed = False
     allg0 = np.all(w_param_init > 10 ** (-12))
+    w_converged = np.abs(instance.SVM_.w.x - w_param_init).sum() < 10 ** (-12)
+    feasible = instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9)
     relative_diff = np.all(np.abs((instance.SVM_.w.x - w_param_init) / w_param_init) < 0.05)
-    return (np.abs(instance.SVM_.w.x - w_param_init).sum() < 10 ** (-12) or (allg0 and relative_diff)) \
-           and instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9) or z_changed
+    return (w_converged or (allg0 and relative_diff)) or (feasible) or z_changed
 
 
 def get_multiplier(instance):
