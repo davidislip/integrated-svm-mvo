@@ -7,12 +7,19 @@ import time
 
 pth = ''
 
+
+print("Input WLS Access ID")
+accessid = input()
+print("Input WLS License ID")
+licenseid = input()
+print("Input WLS Secret Key")
+secret_key = input()
+#web license try to access it via uoft
 e = gp.Env(empty=True)
-# e.setParam('OutputFlag', 0)
-# gurobi_licence = pd.read_csv(pth +'SVM MVO/cache/gurobi.csv')
-# e.setParam('WLSACCESSID', gurobi_licence.WLSACCESSID[0])
-# e.setParam('LICENSEID', gurobi_licence.LICENSEID[0])
-# e.setParam('WLSSECRET', gurobi_licence.WLSSECRET[0])
+e.setParam('OutputFlag', 0)
+e.setParam('WLSACCESSID', accessid)
+e.setParam('LICENSEID', int(licenseid))
+e.setParam('WLSSECRET', secret_key)
 e.start()
 
 
@@ -162,7 +169,7 @@ class SVMMVO:
             self.slacks = False
 
         if self.svm_constr:  # SVM type Models
-            self.model.addConstr(self.x <= self.z, "z force x")  # if x is close to zero then z must be zero 
+            self.model.addConstr(self.x <= self.z, "z force x")  # if x is close to zero then z must be zero
             self.model.addConstr(self.z.sum() <= self.AssetLim, "cardinality 1")
             self.model.addConstr(self.z.sum() >= self.AssetLim_Lower, "cardinality lower")
             # if self.slacks and not self.indicator: #SVM MVO with slack variables
@@ -277,9 +284,9 @@ class SVMMVO:
         mean_ret = self.mean_ret[:, 0]
         # F is the number of portfolios to use for frontier
         frontier = np.empty((2, f))
-        # ws will contain the w's and b values for each portfolio 
+        # ws will contain the w's and b values for each portfolio
         ws = np.empty((f, m + 1))
-        # xis will contain the w's and b values for each portfolio 
+        # xis will contain the w's and b values for each portfolio
         xis = np.empty((f, n))
         # targets for returns
         if lower_ret is None:
@@ -696,11 +703,19 @@ class SVM_MVO_ADM:
 
     @property
     def objective_svm(self):
-        return self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty.getValue()
+        objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty.getValue()
+        if type(objective) is np.float64:
+          return objective
+        else:
+          return objective[0]
 
     @property
     def objective_mvo(self):
-        return self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty_mvo.getValue()
+        objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty_mvo.getValue()
+        if type(objective) is np.float64:
+          return objective
+        else:
+          return objective[0]
 
     def initialize_soln(self, set_return=True, constrs=None, svm_constrs=None, warm_starts=None, delta=0, w_prev_soln=None):
         if svm_constrs is None:
@@ -751,8 +766,8 @@ class SVM_MVO_ADM:
                     zs.append(self.MVO_.z.x)
                     xi_mvo.append(self.MVO_.xi.x)
                     xi_svm.append(self.SVM_.xi.x)
-                    objectives_svm.append(self.objective_svm[0])
-                    objectives_mvo.append(self.objective_mvo[0])
+                    objectives_svm.append(self.objective_svm)
+                    objectives_mvo.append(self.objective_mvo)
                     penalty_hist.append(self.SVM_.soft_margin)
                 self.MVO_.svm_b = self.SVM_.b.x
                 self.MVO_.svm_w = self.SVM_.w.x
@@ -774,8 +789,8 @@ class SVM_MVO_ADM:
                         zs.append(self.MVO_.z.x)
                         xi_mvo.append(self.MVO_.xi.x)
                         xi_svm.append(self.SVM_.xi.x)
-                        objectives_svm.append(self.objective_svm[0])
-                        objectives_mvo.append(self.objective_mvo[0])
+                        objectives_svm.append(self.objective_svm)
+                        objectives_mvo.append(self.objective_mvo)
                         penalty_hist.append(self.SVM_.soft_margin)
                 end = time.time()
 
@@ -838,9 +853,9 @@ class SVM_MVO_ADM:
         mean_ret = self.MVO_.mean_ret[:, 0]
         # F is the number of portfolios to use for frontier
         frontier = np.empty((2, f))
-        # ws will contain the w's and b values for each portfolio 
+        # ws will contain the w's and b values for each portfolio
         ws = np.empty((f, m + 1))
-        # xis will contain the w's and b values for each portfolio 
+        # xis will contain the w's and b values for each portfolio
         xis = np.empty((f, n))
         # targets for returns
         if lower_ret is None:
@@ -945,11 +960,19 @@ class SVM_MVO_ADM_v2:
 
     @property
     def objective_svm(self):
-        return self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty.getValue()
+        objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty.getValue()
+        if type(objective) is np.float64:
+          return objective
+        else:
+          return objective[0]
 
     @property
     def objective_mvo(self):
-        return self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty_mvo.getValue()
+        objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty_mvo.getValue()
+        if type(objective) is np.float64:
+          return objective
+        else:
+          return objective[0]
 
     def initialize_soln(self, set_return=True, constrs=None, svm_constrs=None, zero_soft=True):
         if svm_constrs is None:
@@ -998,8 +1021,8 @@ class SVM_MVO_ADM_v2:
                     zs.append(self.MVO_.z.x)
                     xi_mvo.append(self.MVO_.xi.x)
                     xi_svm.append(self.SVM_.xi.x)
-                    objectives_svm.append(self.objective_svm[0])
-                    objectives_mvo.append(self.objective_mvo[0])
+                    objectives_svm.append(self.objective_svm)
+                    objectives_mvo.append(self.objective_mvo)
 
                 self.MVO_.svm_b = self.SVM_.b.x
                 self.MVO_.svm_w = self.SVM_.w.x
@@ -1020,16 +1043,17 @@ class SVM_MVO_ADM_v2:
                         zs.append(self.MVO_.z.x)
                         xi_mvo.append(self.MVO_.xi.x)
                         xi_svm.append(self.SVM_.xi.x)
-                        objectives_svm.append(self.objective_svm[0])
-                        objectives_mvo.append(self.objective_mvo[0])
+                        objectives_svm.append(self.objective_svm)
+                        objectives_mvo.append(self.objective_mvo)
 
             # out of inner loop
             x_partial = self.MVO_.x.x
+            #w_partial = self.SVM_.w.x
 
             if np.abs(x_partial - x_param_init).sum() <= 10 ** (-12) \
                     and (self.SVM_.xi.x.sum() + self.MVO_.xi.x.sum() >= 10 ** (-6)):  # infeasible
                 print("Stalling at Infeasible Point")
-                # if it is not the first stall and the solution has become more feasible 
+                # if it is not the first stall and the solution has become more feasible
                 # update our best starts
 
                 if not stalled_previously:
@@ -1042,7 +1066,7 @@ class SVM_MVO_ADM_v2:
                 print('MVO ', self.MVO_.xi.x.sum())
                 # reset penalty
                 # self.SVM_.soft_margin , self.MVO_.soft_margin =  (C, C)
-                # generate random starts 
+                # generate random starts
                 u = np.random.rand()
                 A = np.random.rand(len(self.MVO_.x.x), len(self.MVO_.x.x))
                 B = u * np.dot(A, A.transpose()) + (1 - u) * np.identity(len(self.MVO_.x.x))
@@ -1058,11 +1082,11 @@ class SVM_MVO_ADM_v2:
                 self.initialize_soln(zero_soft=False)
                 # now optimize the true covariance from this point
                 self.MVO_.cov = old_cov
-            # out of inner loop 
+            # out of inner loop
             w_update = self.SVM_.w.x
 
             if check_global_convergence(self, w_param_init):
-                print("ADM terminated with C = ", self.SVM_.soft_margin)
+                print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
                 break
                 # if we have not terminated the update the margins based on the ones with xi > 0
 
