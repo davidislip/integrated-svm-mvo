@@ -63,7 +63,7 @@ def getline(ws, xu, yu, xl, yl):
     return tuples
 
 
-def print_MIP(obj_inf, exact_obj_inf, feasible, name=""):
+def print_MIP(obj_inf, exact_obj_inf, feasible = None, name=""):
     """
     print the MIP info
     :param obj_inf:
@@ -74,7 +74,9 @@ def print_MIP(obj_inf, exact_obj_inf, feasible, name=""):
     """
     exact_obj = exact_obj_inf.Risk + exact_obj_inf.Margin
     obj = obj_inf.Risk + obj_inf.Margin
-    MIP_Gaps = (obj[feasible] / exact_obj[feasible] - 1)
+    if feasible is not None:
+        MIP_Gaps = (obj[feasible] / exact_obj[feasible] - 1)
+    MIP_Gaps = (obj / exact_obj - 1)
     # MIP_Gaps.boxplot()
     #
     if name != "":
