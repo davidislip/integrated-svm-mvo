@@ -8,18 +8,18 @@ import time
 pth = ''
 
 
-print("Input WLS Access ID")
-accessid = input()
-print("Input WLS License ID")
-licenseid = input()
-print("Input WLS Secret Key")
-secret_key = input()
-#web license try to access it via uoft
+# print("Input WLS Access ID")
+# accessid = input()
+# print("Input WLS License ID")
+# licenseid = input()
+# print("Input WLS Secret Key")
+# secret_key = input()
+# #web license try to access it via uoft
 e = gp.Env(empty=True)
-e.setParam('OutputFlag', 0)
-e.setParam('WLSACCESSID', accessid)
-e.setParam('LICENSEID', int(licenseid))
-e.setParam('WLSSECRET', secret_key)
+# e.setParam('OutputFlag', 0)
+# e.setParam('WLSACCESSID', accessid)
+# e.setParam('LICENSEID', int(licenseid))
+# e.setParam('WLSSECRET', secret_key)
 e.start()
 
 
@@ -629,10 +629,10 @@ def check_global_convergence(instance, w_param_init, z_param_init=None, x_param_
     else:
         z_changed = False
     allg0 = np.all(w_param_init > 10 ** (-12))
-    w_converged = np.abs(instance.SVM_.w.x - w_param_init).sum() < 10 ** (-12)
+    #w_converged = np.abs(instance.SVM_.w.x - w_param_init).sum() < 10 ** (-12)
     feasible = instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9)
-    relative_diff = np.all(np.abs((instance.SVM_.w.x - w_param_init) / w_param_init) < 0.05)
-    return (w_converged or (allg0 and relative_diff)) or (feasible) or z_changed
+    #relative_diff = np.all(np.abs((instance.SVM_.w.x - w_param_init) / w_param_init) < 0.05)
+    return feasible or z_changed
 
 
 def get_multiplier(instance):
@@ -742,8 +742,8 @@ class SVM_MVO_ADM:
         xs = []
         zs = []
         penalty_hist = []
-        c = self.SVM_.soft_margin / (2 ** (self.ParamLim))  # initialized to a number > 0
-        self.SVM_.soft_margin, self.MVO_.soft_margin = (c, c)
+        c = np.linspace(0, self.SVM_.soft_margin, self.ParamLim + 1)[1:]  # initialized to a number > 0
+        self.SVM_.soft_margin, self.MVO_.soft_margin = (c[0], c[0])
         xi_mvo = []
         xi_svm = []
         objectives_svm, objectives_mvo = ([], [])
@@ -752,7 +752,8 @@ class SVM_MVO_ADM:
         z_param_init = self.MVO_.z.x
         x_param_init = self.MVO_.x.x
         for k in range(self.ParamLim):
-
+            self.SVM_.soft_margin, self.MVO_.soft_margin = (c[k], c[k])
+            print(self.SVM_.soft_margin)
             i, converged = (0, False)
 
             w_param_init = self.SVM_.w.x
@@ -803,8 +804,8 @@ class SVM_MVO_ADM:
                 if check_global_convergence(self, w_param_init):
                     print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
                     break
-            mult = get_multiplier(self)
-            self.SVM_.soft_margin, self.MVO_.soft_margin = (self.SVM_.soft_margin * mult, self.MVO_.soft_margin * mult)
+            #mult = get_multiplier(self)
+            #self.SVM_.soft_margin, self.MVO_.soft_margin = (self.SVM_.soft_margin * mult, self.MVO_.soft_margin * mult)
 
 
         self.x = self.MVO_.x
@@ -813,8 +814,8 @@ class SVM_MVO_ADM:
         self.b = self.SVM_.b
         self.xi_svm = self.SVM_.xi
         self.xi_mvo = self.MVO_.xi
-        self.SVM_.soft_margin, self.MVO_.soft_margin = (
-            c * (2 ** (self.ParamLim)), c * (2 ** (self.ParamLim)))  # reinitialize C
+        #self.SVM_.soft_margin, self.MVO_.soft_margin = (
+            #c * (2 ** (self.ParamLim-1)), c * (2 ** (self.ParamLim-1)))  # reinitialize C
         return np.array(ws), np.array(xs), np.array(zs), np.array(xi_mvo), np.array(
             xi_svm), end - start, objectives_svm, objectives_mvo, np.array(penalty_hist)
 
