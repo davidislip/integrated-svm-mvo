@@ -11,7 +11,7 @@ import random
 import time
 from math import sqrt
 from matplotlib import rc
-# rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-# rc('text', usetex=True)
-# rc('text.latex', preamble=r'\usepackage{amsmath,amssymb,amsfonts}')
+rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+rc('text', usetex=True)
+rc('text.latex', preamble=r'\usepackage{amsmath,amssymb,amsfonts}')
 
