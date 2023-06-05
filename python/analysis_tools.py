@@ -139,7 +139,7 @@ def load_data_mth(rets, forecasts, wrds_svm, cols, prd, N, data_treatment=None):
 
 
 def evaluate_model(rets, forecasts, wrds_svm, return_premium, model_instance, T, N, cols, turnover_limit,
-                   cbb_fn=None, lr=None, data_treatment=None):
+                   cbb_fn=None, distance_trade_off=None, data_treatment=None):
     """
     Runs the experiment on the model_instance
     :param rets:
@@ -199,17 +199,17 @@ def evaluate_model(rets, forecasts, wrds_svm, return_premium, model_instance, T,
         if i > 0:  # not the first trade gets a constraint on turnover
             model_instance.define_turnover(x_prev, np.ones_like(x_prev), turnover_limit, 1)
 
-            if model_instance.svm_constr and lr is not None:
-                wcon1 = model_instance.model.addConstr(model_instance.w <= w_prev + lr * w_mabs,
+            if model_instance.svm_constr and distance_trade_off is not None:
+                wcon1 = model_instance.model.addConstr(model_instance.w <= w_prev + distance_trade_off * w_mabs,
                                                        'iter constraint 1')
-                wcon2 = model_instance.model.addConstr(model_instance.w >= w_prev - lr * w_mabs,
+                wcon2 = model_instance.model.addConstr(model_instance.w >= w_prev - distance_trade_off * w_mabs,
                                                        'iter constraint 2')
 
         model_instance.model.Params.LogToConsole = 0
 
         model_instance.optimize(cbb=cbb_fn)
         k = 1
-        while model_instance.model.status == 4:
+        while model_instance.model.status in (4, 3):
             # if the model is infeasible the decrease the return constraint
             # we do not have enough turnover the modify the portfolio to achive the
             # return target... not a great place to be
@@ -230,8 +230,8 @@ def evaluate_model(rets, forecasts, wrds_svm, return_premium, model_instance, T,
         if model_instance.svm_constr:
             wis[i, :] = model_instance.w.x
             bias.append(model_instance.b.x)
-            # if model_instance.w.x >= w_prev + lr*w_mabs  and wcon2.Pi < 10**(-7):
-            #   lr = lr/2
+            # if model_instance.w.x >= w_prev + distance_trade_off*w_mabs  and wcon2.Pi < 10**(-7):
+            #   distance_trade_off = distance_trade_off/2
         if i + 1 >= T:
             break
         if i % 12 == 0:
@@ -247,7 +247,7 @@ def evaluate_model(rets, forecasts, wrds_svm, return_premium, model_instance, T,
 
 
 def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N, cols,
-                 turnover_limit, lr=None, data_treatment=None):
+                 turnover_limit, distance_trade_off=None, data_treatment=None):
     portfolio_weights = np.zeros([T, N])
     oot_returns = np.zeros(T)
     market = np.zeros(T)
@@ -298,17 +298,17 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             # add constraints on w
 
             # epsilon allows change if w is 0
-            if lr is not None:
+            if distance_trade_off is not None:
                 w_prev = model_instance.SVM_.w.x
                 b_prev = model_instance.SVM_.b.x
                 # svm_cons.append(
-                #     model_instance.SVM_.w <= w_prev + lr * w_mabs)  # 'iter constraint 1'
+                #     model_instance.SVM_.w <= w_prev + distance_trade_off * w_mabs)  # 'iter constraint 1'
                 # svm_cons.append(
-                #     model_instance.SVM_.w >= w_prev - lr * w_mabs)  # 'iter constraint 2'
+                #     model_instance.SVM_.w >= w_prev - distance_trade_off * w_mabs)  # 'iter constraint 2'
 
         try:
             model_instance.initialize_soln(constrs=mvo_cons, svm_constrs=svm_cons,
-                                           warm_starts=warm_starts, delta=lr, w_prev_soln=w_prev)
+                                           warm_starts=warm_starts, delta=distance_trade_off, w_prev_soln=w_prev)
         except:
             print("Begin Relaxation")
         k = 1
@@ -323,7 +323,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             model_instance.MVO_.ret_target[0].rhs = ret_constr
             try:
                 model_instance.initialize_soln(constrs=mvo_cons, svm_constrs=svm_cons,
-                                               warm_starts=warm_starts, delta=lr, w_prev_soln=w_prev)
+                                               warm_starts=warm_starts, delta=distance_trade_off, w_prev_soln=w_prev)
             except:
                 print("Try to Relax Again")
             k = k + 1
@@ -332,7 +332,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
         try:
             ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist = \
                 model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
-                                         delta=lr, w_prev_soln=w_prev)
+                                         delta=distance_trade_off, w_prev_soln=w_prev)
         except:
             print("Begin Relaxation")
         k = 1
@@ -348,7 +348,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             try:
                 ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist  = \
                     model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
-                                             delta=lr, w_prev_soln=w_prev)
+                                             delta=distance_trade_off, w_prev_soln=w_prev)
             except:
                 print("Try to Relax Again")
             if k > 3: #only try to relax a couple times
@@ -357,7 +357,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
                 print("giving up ...  MVP")
                 ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist  = \
                     model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
-                                             delta=lr, w_prev_soln=w_prev)
+                                             delta=distance_trade_off, w_prev_soln=w_prev)
                 break
             k = k + 1
 

@@ -652,10 +652,9 @@ def get_multiplier(instance):
     return mult
 
 
+
 class SVM_MVO_ADM:
     # '''this class models the integrated SVM MVO problem using the ADM solution method'''
-    big_m = 100
-    epsilon = 0.001
 
     def __init__(self, MVO_, SVM_, IterLim=20, ParamLim=10):
         self.MVO_ = MVO_
@@ -742,7 +741,10 @@ class SVM_MVO_ADM:
         xs = []
         zs = []
         penalty_hist = []
-        c = np.linspace(0, self.SVM_.soft_margin, self.ParamLim + 1)[1:]  # initialized to a number > 0
+        if self.ParamLim == 1:
+            c = np.geomspace(self.SVM_.soft_margin, self.SVM_.soft_margin, self.ParamLim)
+        else:
+            c = np.geomspace(1e-5, self.SVM_.soft_margin, self.ParamLim)  # initialized to a number > 0
         self.SVM_.soft_margin, self.MVO_.soft_margin = (c[0], c[0])
         xi_mvo = []
         xi_svm = []
@@ -753,7 +755,7 @@ class SVM_MVO_ADM:
         x_param_init = self.MVO_.x.x
         for k in range(self.ParamLim):
             self.SVM_.soft_margin, self.MVO_.soft_margin = (c[k], c[k])
-            print(self.SVM_.soft_margin)
+            #print(self.SVM_.soft_margin)
             i, converged = (0, False)
 
             w_param_init = self.SVM_.w.x
@@ -815,7 +817,7 @@ class SVM_MVO_ADM:
         self.xi_svm = self.SVM_.xi
         self.xi_mvo = self.MVO_.xi
         #self.SVM_.soft_margin, self.MVO_.soft_margin = (
-            #c * (2 ** (self.ParamLim-1)), c * (2 ** (self.ParamLim-1)))  # reinitialize C
+        #    c * (2 ** (self.ParamLim-1)), c * (2 ** (self.ParamLim-1)))  # reinitialize C
         return np.array(ws), np.array(xs), np.array(zs), np.array(xi_mvo), np.array(
             xi_svm), end - start, objectives_svm, objectives_mvo, np.array(penalty_hist)
 
