@@ -362,17 +362,15 @@ class MVO:
     big_m = 100
 
     # noinspection PyTypeChecker
-    def __init__(self, tics, mean_ret, cov, ret_constr, exogenous, asset_lim,
-                 soft_margin=0, svm_w=None, svm_b=None,
-                 perspective=False, asset_lim_lower=0, epsilon=0.001):
+    def __init__(self, tics, mean_ret, cov, ret_constr, asset_lim,
+                 soft_margin=0, decision_boundary = None, asset_lim_lower=0, epsilon=0.001):
         self.tics = tics  # list of tickers
         self.mean_ret = mean_ret
         self.cov = cov
         self.ret_constr = ret_constr
         self.AssetLim = asset_lim
         self.AssetLim_Lower = asset_lim_lower
-        self.exogenous = exogenous  # matrix of features for the tickers
-        n, m = self.exogenous.shape
+        n = len(mean_ret)
 
         self.model = gp.Model(env=e)
         self.x = self.model.addMVar(n)
@@ -382,10 +380,10 @@ class MVO:
         self.xi = self.model.addMVar(n, lb=np.zeros(n))
         self.ret_target = self.model.addConstr(self.port_exptd_ret >= self.ret_constr, 'target')
 
-        self.svm_w = svm_w
-        self.svm_b = svm_b
+        self.decision_boundary = decision_boundary #vector for each asset defining decision boundary
+
         self.soft_margin = soft_margin
-        self.perspective = perspective
+
         self.epsilon = epsilon
         self.model.update()
 
@@ -404,7 +402,7 @@ class MVO:
 
     @property
     def soft_penalty(self):
-        n, m = self.exogenous.shape
+        n = len(self.mean_ret)
         if np.isscalar(self.soft_margin):
             return (1 / n) * self.soft_margin * (self.xi.sum())
         else:
@@ -437,9 +435,8 @@ class MVO:
             self.x.start = warm_starts[0]
             self.z.start = warm_starts[1]
         self.model.remove(self.model.getConstrs())
-        n, m = self.exogenous.shape
-        big_m = MVO.big_m
-        epsilon = self.epsilon
+        n = len(self.mean_ret)
+
         # objective function components
         if set_return:
             # remove constraints and reset the return constraints
@@ -450,24 +447,20 @@ class MVO:
 
         self.model.update()
         self.model.addConstr(self.x.sum() == 1, 'budget')
+
         self.model.addConstr(self.z.sum() <= self.AssetLim, 'Cardinality')
         self.model.addConstr(self.z.sum() >= self.AssetLim_Lower, 'Cardinality')
 
         self.model.addConstr(self.x <= self.z, "z force x")
         self.model.setObjective(self.portfolio_risk + self.soft_penalty, GRB.MINIMIZE)
 
-        # for i in range(N):
-        #   self.model.addGenConstrIndicator(z_[i], True, x_[i] >= self.epsilon/big_m)
-        # self.model.addGenConstrIndicator(z_[i], False, x_[i] <= self.epsilon/(100*big_m) - 10**(-7))
-
         # the SVM info must be uninitialized on the first run
-        if type(self.svm_w) is np.ndarray:
+        if self.decision_boundary is not None:
             for i in range(n):
-                y_i = self.exogenous.iloc[i].values
-                a = np.dot(y_i, self.svm_w) + self.svm_b
-                self.model.addConstr((-1) * self.epsilon + self.xi[i] + big_m * self.z[i] >= a, "svm1")
-                self.model.addConstr(-1 * big_m * (1 - self.z[i]) + 1 * self.epsilon - self.xi[i] - a <= 0, "svm2")
-                # self.model.addConstr(2*a[0]*z_[i] >= a[0] + self.epsilon - xi_[i], 'svm'+str(i))
+                a = self.decision_boundary[i]
+                # self.model.addConstr((-1) * self.epsilon + self.xi[i] + big_m * self.z[i] >= a, "svm1")
+                # self.model.addConstr(-1 * big_m * (1 - self.z[i]) + 1 * self.epsilon - self.xi[i] - a <= 0, "svm2")
+                self.model.addConstr(2*a[0]*self.z[i] >= a[0] + self.epsilon - self.xi[i], 'svm'+str(i))
 
     def optimize(self, cbb=None):
 
@@ -653,6 +646,7 @@ def get_multiplier(instance):
 
 
 
+
 class SVM_MVO_ADM:
     # '''this class models the integrated SVM MVO problem using the ADM solution method'''
 
@@ -745,6 +739,7 @@ class SVM_MVO_ADM:
             c = np.geomspace(self.SVM_.soft_margin, self.SVM_.soft_margin, self.ParamLim)
         else:
             c = np.geomspace(1e-5, self.SVM_.soft_margin, self.ParamLim)  # initialized to a number > 0
+
         self.SVM_.soft_margin, self.MVO_.soft_margin = (c[0], c[0])
         xi_mvo = []
         xi_svm = []
@@ -773,12 +768,11 @@ class SVM_MVO_ADM:
                     objectives_svm.append(self.objective_svm)
                     objectives_mvo.append(self.objective_mvo)
                     penalty_hist.append(self.SVM_.soft_margin)
-                self.MVO_.svm_b = self.SVM_.b.x
-                self.MVO_.svm_w = self.SVM_.w.x
-
+                #update MVO model
+                self.MVO_.decision_boundary= self.SVM_.decision_boundary
                 self.MVO_.set_model(set_return, constrs, warm_starts=[x_prev, z_prev])
                 self.MVO_.optimize()
-
+                #update SVM model
                 self.SVM_.mvo_z = self.MVO_.z.x
                 self.SVM_.set_model(svm_constrs, delta, w_prev_soln)
                 self.SVM_.optimize()
@@ -911,7 +905,6 @@ class SVM_MVO_ADM:
         if (export_dir != ''):
             plt.savefig(export_dir + "EfficientFrontier.png")
         return (frontier, ws, xis)
-
 
 class SVM_MVO_ADM_v2:
     # '''this class models the integrated SVM MVO problem using the ADM solution method'''

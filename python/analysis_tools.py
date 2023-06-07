@@ -63,7 +63,7 @@ def getline(ws, xu, yu, xl, yl):
     return tuples
 
 
-def print_MIP(obj_inf, exact_obj_inf, feasible = None, name=""):
+def print_MIP(obj_inf, exact_obj_inf, feasible=None, name=""):
     """
     print the MIP info
     :param obj_inf:
@@ -117,6 +117,24 @@ def RetStats(returns, rf=None, geomean=True):
 def wealth(returns):
     """Assumes returns is a pandas Series"""
     return (1 + returns).cumprod()
+
+
+# Ref: https://medium.com/all-things-ai/in-depth-parameter-tuning-for-svc-758215394769
+def plotSVC(title, X, y, SVM_):
+    # create a mesh to plot in
+    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+    h = (x_max - x_min) / 100
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))
+    plt.subplot(1, 1, 1)
+    z = SVM_.predict(np.c_[xx.ravel(), yy.ravel()])
+    z = z.reshape(xx.shape)
+    plt.contourf(xx, yy, z, cmap=plt.cm.Paired, alpha=0.8)
+    plt.scatter(X[:, 0], X[:, 1], c=y, cmap=plt.cm.Paired)
+    plt.xlim(xx.min(), xx.max())
+    plt.title(title)
+    plt.show()
+    pass
 
 
 def load_data_mth(rets, forecasts, wrds_svm, cols, prd, N, data_treatment=None):
@@ -183,7 +201,6 @@ def evaluate_model(rets, forecasts, wrds_svm, return_premium, model_instance, T,
         model_instance.mean_ret = mean
         model_instance.cov = cov
         model_instance.exogenous = Y_out
-
 
         warm_starts = None
         if i > 0:  # not the first trade gets a constraint on turnover
@@ -287,7 +304,6 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             # policy constraint
             w_mabs = (i / (i + 1)) * w_mabs + (1 / (i + 1)) * np.abs(model_instance.SVM_.w.x).mean()
 
-
             # portfolio turnover constraints
             for v, absv, curr in zip(model_instance.MVO_.x.tolist(), model_instance.MVO_.abs.tolist(), x_prev.tolist()):
                 mvo_cons.append(absv >= v - curr)
@@ -312,7 +328,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
         except:
             print("Begin Relaxation")
         k = 1
-        while model_instance.MVO_.model.status == 4:
+        while model_instance.MVO_.model.status in (3, 4):
             # if the model is infeasible the decrease the return constraint
             # we do not have enough turnover the modify the portfolio to achive the
             # return target... not a great place to be
@@ -346,16 +362,16 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             model_instance.MVO_.ret_constr = ret_constr
             model_instance.MVO_.ret_target[0].rhs = ret_constr
             try:
-                ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist  = \
+                ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist = \
                     model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
                                              delta=distance_trade_off, w_prev_soln=w_prev)
             except:
                 print("Try to Relax Again")
-            if k > 3: #only try to relax a couple times
+            if k > 3:  # only try to relax a couple times
                 model_instance.MVO_.ret_constr = -1
                 model_instance.MVO_.ret_target[0].rhs = -1
                 print("giving up ...  MVP")
-                ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist  = \
+                ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist = \
                     model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
                                              delta=distance_trade_off, w_prev_soln=w_prev)
                 break
