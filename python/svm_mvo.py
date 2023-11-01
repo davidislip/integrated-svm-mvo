@@ -7,7 +7,6 @@ import time
 
 pth = ''
 
-
 # print("Input WLS Access ID")
 # accessid = input()
 # print("Input WLS License ID")
@@ -60,8 +59,8 @@ class SVMMVO:
         self.model = gp.Model(env=e)
         self.x = self.model.addMVar(n)
         if non_neg:
-            self.w = self.model.addMVar(m)
-            self.b = self.model.addMVar(1)
+            self.w = self.model.addMVar(m, lb=np.zeros(m))
+            self.b = self.model.addMVar(1, lb=0)
         else:
             self.w = self.model.addMVar(m, lb=-1 * np.inf)
             self.b = self.model.addMVar(1, lb=-1 * np.inf)
@@ -214,7 +213,7 @@ class SVMMVO:
                 for i in range(n):
                     y_i = self.exogenous.iloc[i].values
                     self.model.addConstr(self.w @ y_i + self.b <= (-1) * self.epsilon + big_m * self.z[i], "svm1")
-                    self.model.addConstr(-1*big_m * (1 - self.z[i]) + 1*self.epsilon
+                    self.model.addConstr(-1 * big_m * (1 - self.z[i]) + 1 * self.epsilon
                                          - (y_i @ self.w + self.b) <= 0, "svm2")
         elif self.cardinality:
             self.model.update()
@@ -363,7 +362,7 @@ class MVO:
 
     # noinspection PyTypeChecker
     def __init__(self, tics, mean_ret, cov, ret_constr, asset_lim,
-                 soft_margin=0, decision_boundary = None, asset_lim_lower=0, epsilon=0.001):
+                 soft_margin=0, decision_boundary=None, asset_lim_lower=0, epsilon=0.001):
         self.tics = tics  # list of tickers
         self.mean_ret = mean_ret
         self.cov = cov
@@ -380,7 +379,7 @@ class MVO:
         self.xi = self.model.addMVar(n, lb=np.zeros(n))
         self.ret_target = self.model.addConstr(self.port_exptd_ret >= self.ret_constr, 'target')
 
-        self.decision_boundary = decision_boundary #vector for each asset defining decision boundary
+        self.decision_boundary = decision_boundary  # vector for each asset defining decision boundary
 
         self.soft_margin = soft_margin
 
@@ -445,7 +444,7 @@ class MVO:
             for con in constrs:
                 self.model.addConstr(con, 'target')
 
-        self.model.update()
+
         self.model.addConstr(self.x.sum() == 1, 'budget')
 
         self.model.addConstr(self.z.sum() <= self.AssetLim, 'Cardinality')
@@ -460,8 +459,9 @@ class MVO:
                 a = self.decision_boundary[i]
                 # self.model.addConstr((-1) * self.epsilon + self.xi[i] + big_m * self.z[i] >= a, "svm1")
                 # self.model.addConstr(-1 * big_m * (1 - self.z[i]) + 1 * self.epsilon - self.xi[i] - a <= 0, "svm2")
-                self.model.addConstr(2*a[0]*self.z[i] >= a[0] + self.epsilon - self.xi[i], 'svm'+str(i))
+                self.model.addConstr(2 * a[0] * self.z[i] - a[0] >= self.epsilon - self.xi[i], 'svm' + str(i))
 
+        self.model.update()
     def optimize(self, cbb=None):
 
         if cbb not in [None]:
@@ -494,19 +494,20 @@ class MVO:
 class SVM:
     # This class models the support vector machine sub problem in the ADM method
     big_m = 100
+
     # noinspection PyTypeChecker
     def __init__(self, tics, exogenous, soft_margin, mvo_z=None, non_neg=True, epsilon=0.001):
         self.tics = tics  # list of tickers
         self.exogenous = exogenous  # matrix of features for the tickers
         self.soft_margin = soft_margin  # hyper parameter
-
+        self.decision_boundary = None
         n, m = self.exogenous.shape
 
         self.model = gp.Model(env=e)
 
         if non_neg:
-            self.w = self.model.addMVar(m)
-            self.b = self.model.addMVar(1)
+            self.w = self.model.addMVar(m, lb=0)
+            self.b = self.model.addMVar(1, lb=0)
         else:
             self.w = self.model.addMVar(m, lb=-1 * np.inf)
             self.b = self.model.addMVar(1, lb=-1 * np.inf)
@@ -532,7 +533,7 @@ class SVM:
 
     def svm_change(self, w_prev):
         n, m = self.exogenous.shape
-        w_diff = self.model.addMVar(m, lb = -1*GRB.INFINITY)
+        w_diff = self.model.addMVar(m, lb=-1 * GRB.INFINITY)
         self.model.addConstr(w_diff == self.w - w_prev)
         return (1 / 2) * (w_diff @ w_diff)
 
@@ -563,7 +564,7 @@ class SVM:
                 self.model.addConstr(con, 'target')
 
         if w_prev_soln is not None:
-            hyperplane_penalty = (1-delta)*self.svm_margin + delta*self.svm_change(w_prev_soln)
+            hyperplane_penalty = (1 - delta) * self.svm_margin + delta * self.svm_change(w_prev_soln)
         else:
             hyperplane_penalty = self.svm_margin
 
@@ -601,8 +602,20 @@ class SVM:
             self.model.optimize(callback=cbb)
         else:
             self.model.optimize()
+        # store the decision boundary
+        n, m = self.exogenous.shape
+        self.decision_boundary = []
+        for i in range(n):
+            y_i = self.exogenous.iloc[i].values
+            # print("asset sign ", 2 * self.mvo_z[i] - 1)
+            # print("negative vol ", y_i)
+            # print("hyperplane ", self.w.x)
+            # print("bias  ", self.b.x)
+            a_i = y_i @ self.w.x + self.b.x
+            # print("decision boundary asset ", i, " value ", a_i)
+            # print("slack ", i, " value ", self.xi[i].x)
+            self.decision_boundary.append(a_i)
         self.model.write('portfolio_selection_optimization.lp')
-
 
 def check_partial_min(instance, w_prev):
     """checks for partial min"""
@@ -610,7 +623,7 @@ def check_partial_min(instance, w_prev):
     relative_diff = np.all(np.abs((instance.SVM_.w.x - w_prev) / w_prev) < 0.05)
     matching_penalty = np.abs(instance.MVO_.xi.x - instance.SVM_.xi.x).sum() <= 10 ** (-6)
     return (np.abs(instance.SVM_.w.x - w_prev).sum() < 10 ** (-12)) or (allg0 and relative_diff) and matching_penalty \
-           or (instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9))
+        or (instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9))
 
 
 def check_global_convergence(instance, w_param_init, z_param_init=None, x_param_init=None):
@@ -618,13 +631,17 @@ def check_global_convergence(instance, w_param_init, z_param_init=None, x_param_
     if z_param_init is not None:
         big_x_old = (x_param_init > 1e-4).astype(int)
         big_x_new = (instance.MVO_.x.x > 1e-4).astype(int)
-        z_changed = np.abs(big_x_old - big_x_new).sum()/len(z_param_init) > instance.change_threshold
+        support = ((x_param_init > 1e-4) | (instance.MVO_.x.x > 1e-4)).astype(int)
+        z_changed = np.abs(big_x_old - big_x_new).sum() / sum(support) > instance.change_threshold
+        #print(np.abs(big_x_old - big_x_new).sum() / len(z_param_init))
     else:
         z_changed = False
     allg0 = np.all(w_param_init > 10 ** (-12))
-    #w_converged = np.abs(instance.SVM_.w.x - w_param_init).sum() < 10 ** (-12)
+    # w_converged = np.abs(instance.SVM_.w.x - w_param_init).sum() < 10 ** (-12)
     feasible = instance.SVM_.xi.x.sum() + instance.MVO_.xi.x.sum() < 10 ** (-9)
-    #relative_diff = np.all(np.abs((instance.SVM_.w.x - w_param_init) / w_param_init) < 0.05)
+    #if not feasible:
+        #print("not feasible")
+    # relative_diff = np.all(np.abs((instance.SVM_.w.x - w_param_init) / w_param_init) < 0.05)
     return feasible or z_changed
 
 
@@ -645,8 +662,6 @@ def get_multiplier(instance):
     return mult
 
 
-
-
 class SVM_MVO_ADM:
     # '''this class models the integrated SVM MVO problem using the ADM solution method'''
 
@@ -663,6 +678,7 @@ class SVM_MVO_ADM:
         self.xi_mvo = None
         self.track_change = False
         self.change_threshold = 1
+
     @property
     def describe(self):
         desc = "SVM MVO with Alternating Direction Method"
@@ -699,19 +715,20 @@ class SVM_MVO_ADM:
     def objective_svm(self):
         objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty.getValue()
         if type(objective) is np.float64:
-          return objective
+            return objective
         else:
-          return objective[0]
+            return objective[0]
 
     @property
     def objective_mvo(self):
         objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty_mvo.getValue()
         if type(objective) is np.float64:
-          return objective
+            return objective
         else:
-          return objective[0]
+            return objective[0]
 
-    def initialize_soln(self, set_return=True, constrs=None, svm_constrs=None, warm_starts=None, delta=0, w_prev_soln=None):
+    def initialize_soln(self, set_return=True, constrs=None, svm_constrs=None, warm_starts=None, delta=0,
+                        w_prev_soln=None):
         if svm_constrs is None:
             svm_constrs = []
         if constrs is None:
@@ -750,7 +767,7 @@ class SVM_MVO_ADM:
         x_param_init = self.MVO_.x.x
         for k in range(self.ParamLim):
             self.SVM_.soft_margin, self.MVO_.soft_margin = (c[k], c[k])
-            #print(self.SVM_.soft_margin)
+            # print(self.SVM_.soft_margin)
             i, converged = (0, False)
 
             w_param_init = self.SVM_.w.x
@@ -768,11 +785,11 @@ class SVM_MVO_ADM:
                     objectives_svm.append(self.objective_svm)
                     objectives_mvo.append(self.objective_mvo)
                     penalty_hist.append(self.SVM_.soft_margin)
-                #update MVO model
-                self.MVO_.decision_boundary= self.SVM_.decision_boundary
+                # update MVO model
+                self.MVO_.decision_boundary = self.SVM_.decision_boundary
                 self.MVO_.set_model(set_return, constrs, warm_starts=[x_prev, z_prev])
                 self.MVO_.optimize()
-                #update SVM model
+                # update SVM model
                 self.SVM_.mvo_z = self.MVO_.z.x
                 self.SVM_.set_model(svm_constrs, delta, w_prev_soln)
                 self.SVM_.optimize()
@@ -780,7 +797,7 @@ class SVM_MVO_ADM:
 
                 if check_partial_min(self, w_prev):
                     converged = True
-                    #print("partial min convergence")
+                    # print("partial min convergence")
                     if store_data:
                         ws.append(self.SVM_.w.x)
                         xs.append(self.MVO_.x.x)
@@ -800,9 +817,8 @@ class SVM_MVO_ADM:
                 if check_global_convergence(self, w_param_init):
                     print("ADM terminated with C = ", np.mean(self.SVM_.soft_margin))
                     break
-            #mult = get_multiplier(self)
-            #self.SVM_.soft_margin, self.MVO_.soft_margin = (self.SVM_.soft_margin * mult, self.MVO_.soft_margin * mult)
-
+            # mult = get_multiplier(self)
+            # self.SVM_.soft_margin, self.MVO_.soft_margin = (self.SVM_.soft_margin * mult, self.MVO_.soft_margin * mult)
 
         self.x = self.MVO_.x
         self.z = self.MVO_.z
@@ -810,7 +826,7 @@ class SVM_MVO_ADM:
         self.b = self.SVM_.b
         self.xi_svm = self.SVM_.xi
         self.xi_mvo = self.MVO_.xi
-        #self.SVM_.soft_margin, self.MVO_.soft_margin = (
+        # self.SVM_.soft_margin, self.MVO_.soft_margin = (
         #    c * (2 ** (self.ParamLim-1)), c * (2 ** (self.ParamLim-1)))  # reinitialize C
         return np.array(ws), np.array(xs), np.array(zs), np.array(xi_mvo), np.array(
             xi_svm), end - start, objectives_svm, objectives_mvo, np.array(penalty_hist)
@@ -906,6 +922,7 @@ class SVM_MVO_ADM:
             plt.savefig(export_dir + "EfficientFrontier.png")
         return (frontier, ws, xis)
 
+
 class SVM_MVO_ADM_v2:
     # '''this class models the integrated SVM MVO problem using the ADM solution method'''
     big_m = 100
@@ -959,17 +976,17 @@ class SVM_MVO_ADM_v2:
     def objective_svm(self):
         objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty.getValue()
         if type(objective) is np.float64:
-          return objective
+            return objective
         else:
-          return objective[0]
+            return objective[0]
 
     @property
     def objective_mvo(self):
         objective = self.portfolio_risk.getValue() + self.svm_margin.getValue() + self.soft_penalty_mvo.getValue()
         if type(objective) is np.float64:
-          return objective
+            return objective
         else:
-          return objective[0]
+            return objective[0]
 
     def initialize_soln(self, set_return=True, constrs=None, svm_constrs=None, zero_soft=True):
         if svm_constrs is None:
@@ -1045,7 +1062,7 @@ class SVM_MVO_ADM_v2:
 
             # out of inner loop
             x_partial = self.MVO_.x.x
-            #w_partial = self.SVM_.w.x
+            # w_partial = self.SVM_.w.x
 
             if np.abs(x_partial - x_param_init).sum() <= 10 ** (-12) \
                     and (self.SVM_.xi.x.sum() + self.MVO_.xi.x.sum() >= 10 ** (-6)):  # infeasible
