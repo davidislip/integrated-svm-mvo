@@ -491,12 +491,14 @@ class MVO:
         self.model.addConstr(self.abs @ q <= limit, "turnover constraint3")
 
 
+
+
 class SVM:
     # This class models the support vector machine sub problem in the ADM method
     big_m = 100
 
     # noinspection PyTypeChecker
-    def __init__(self, tics, exogenous, soft_margin, mvo_z=None, non_neg=True, epsilon=0.001):
+    def __init__(self, tics, exogenous, soft_margin, mvo_z=None, non_neg=True, epsilon=0.001, class_weights = None):
         self.tics = tics  # list of tickers
         self.exogenous = exogenous  # matrix of features for the tickers
         self.soft_margin = soft_margin  # hyper parameter
@@ -517,15 +519,29 @@ class SVM:
         self.abs_b = self.model.addMVar(1)
         self.abs = self.model.addMVar(n)
         self.epsilon = epsilon
+        self.class_weights = class_weights #class weights dictionary that multiplies each
+                                           #the penalty of each error by the weight
+                                           #weights must be specified for each class
 
     @property
     def soft_penalty(self):
         n, m = self.exogenous.shape
-        if np.isscalar(self.soft_margin):
-            return (1 / n) * self.soft_margin * (self.xi.sum())
-        else:
+        classes = np.unique(self.mvo_z)
 
-            return (1 / n) * (self.soft_margin[:, 0] @ self.xi)
+        assert len(classes) == 2
+
+        if self.class_weights is None:
+            class_weights = {classes[0]:1, classes[1]:1}
+        else:
+            class_weights = self.class_weights
+        negative_idx = self.mvo_z == classes[0]
+        positive_idx = self.mvo_z == classes[1]
+        if np.isscalar(self.soft_margin):
+            return (1 / n) * self.soft_margin * class_weights[classes[0]]* (self.xi[negative_idx].sum()) \
+                   + (1 / n) * self.soft_margin * class_weights[classes[1]]* (self.xi[positive_idx].sum())
+        else:
+            return (1 / n) * class_weights[classes[0]] * (self.soft_margin[negative_idx, 0] @ self.xi[negative_idx]) \
+                   + (1 / n) * class_weights[classes[1]] * (self.soft_margin[positive_idx, 0] @ self.xi[positive_idx])
 
     @property
     def svm_margin(self):
@@ -617,6 +633,13 @@ class SVM:
             self.decision_boundary.append(a_i)
         self.model.write('portfolio_selection_optimization.lp')
 
+def get_mvo_class_weights(z):
+    positive_class_weight = len(z) / z.sum()
+    negative_class_weight = len(z) / (len(z) - z.sum())
+    classes = np.sort(np.unique(z))
+    class_weights = {classes[0]: negative_class_weight, classes[1]: positive_class_weight}
+    return class_weights
+
 def check_partial_min(instance, w_prev):
     """checks for partial min"""
     allg0 = np.all(w_prev > 10 ** (-9))
@@ -665,7 +688,7 @@ def get_multiplier(instance):
 class SVM_MVO_ADM:
     # '''this class models the integrated SVM MVO problem using the ADM solution method'''
 
-    def __init__(self, MVO_, SVM_, IterLim=20, ParamLim=10):
+    def __init__(self, MVO_, SVM_, IterLim=20, ParamLim=10, class_weighted=False):
         self.MVO_ = MVO_
         self.SVM_ = SVM_
         self.IterLim = IterLim
@@ -678,6 +701,7 @@ class SVM_MVO_ADM:
         self.xi_mvo = None
         self.track_change = False
         self.change_threshold = 1
+        self.class_weighted = class_weighted
 
     @property
     def describe(self):
@@ -739,11 +763,21 @@ class SVM_MVO_ADM:
         if self.MVO_.model.status == 4:
             return  # return threshold must be reduced
         self.SVM_.mvo_z = self.MVO_.z.x
+
+        if self.class_weighted:
+            self.SVM_.class_weights = get_mvo_class_weights(self.MVO_.z.x)
+
+        # K_ = math.floor(0.1*sum(self.MVO_.z.x))
+
+        # self.MVO_.AssetLim_Lower = K_
+        # self.MVO_.set_model(set_return, constrs, warm_starts)  # set up the model
+        # self.MVO_.optimize()
+
         self.SVM_.set_model(svm_constrs, delta, w_prev_soln)
         self.SVM_.optimize()
 
     def solve_adm(self, store_data=True, set_return=True, constrs=None, svm_constrs=None, delta=0,
-                  w_prev_soln=None):
+                  w_prev_soln=None, callbacks=None):
         if svm_constrs is None:
             svm_constrs = []
         if constrs is None:
@@ -766,6 +800,7 @@ class SVM_MVO_ADM:
         z_param_init = self.MVO_.z.x
         x_param_init = self.MVO_.x.x
         for k in range(self.ParamLim):
+            self.k = k
             self.SVM_.soft_margin, self.MVO_.soft_margin = (c[k], c[k])
             # print(self.SVM_.soft_margin)
             i, converged = (0, False)
@@ -791,6 +826,10 @@ class SVM_MVO_ADM:
                 self.MVO_.optimize()
                 # update SVM model
                 self.SVM_.mvo_z = self.MVO_.z.x
+
+                if self.class_weighted:
+                    self.SVM_.class_weights = get_mvo_class_weights(self.MVO_.z.x)
+
                 self.SVM_.set_model(svm_constrs, delta, w_prev_soln)
                 self.SVM_.optimize()
                 i += 1
@@ -802,12 +841,17 @@ class SVM_MVO_ADM:
                         ws.append(self.SVM_.w.x)
                         xs.append(self.MVO_.x.x)
                         zs.append(self.MVO_.z.x)
+                        # print("appending iter (k, i) ", (k, i))
                         xi_mvo.append(self.MVO_.xi.x)
                         xi_svm.append(self.SVM_.xi.x)
                         objectives_svm.append(self.objective_svm)
                         objectives_mvo.append(self.objective_mvo)
                         penalty_hist.append(self.SVM_.soft_margin)
                 end = time.time()
+
+            if callbacks is not None:
+                for callback in callbacks:
+                    callback(self)
 
             if self.track_change:
                 if check_global_convergence(self, w_param_init, z_param_init, x_param_init):
@@ -826,8 +870,10 @@ class SVM_MVO_ADM:
         self.b = self.SVM_.b
         self.xi_svm = self.SVM_.xi
         self.xi_mvo = self.MVO_.xi
+
         # self.SVM_.soft_margin, self.MVO_.soft_margin = (
         #    c * (2 ** (self.ParamLim-1)), c * (2 ** (self.ParamLim-1)))  # reinitialize C
+
         return np.array(ws), np.array(xs), np.array(zs), np.array(xi_mvo), np.array(
             xi_svm), end - start, objectives_svm, objectives_mvo, np.array(penalty_hist)
 

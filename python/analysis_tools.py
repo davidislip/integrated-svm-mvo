@@ -342,6 +342,14 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
                                                warm_starts=warm_starts, delta=distance_trade_off, w_prev_soln=w_prev)
             except:
                 print("Try to Relax Again")
+
+            if k > 3:  # only try to relax a couple times
+                model_instance.MVO_.ret_constr = -1
+                model_instance.MVO_.ret_target[0].rhs = -1
+
+                model_instance.initialize_soln(constrs=mvo_cons, svm_constrs=svm_cons,
+                                               warm_starts=warm_starts, delta=distance_trade_off, w_prev_soln=w_prev)
+
             k = k + 1
 
         # model_instance.silence_output()
@@ -370,6 +378,7 @@ def evaluate_adm(rets, forecasts, wrds_svm, return_premium, model_instance, T, N
             if k > 3:  # only try to relax a couple times
                 model_instance.MVO_.ret_constr = -1
                 model_instance.MVO_.ret_target[0].rhs = -1
+
                 print("giving up ...  MVP")
                 ws, xs, zs, xi_mvo, xi_svm, dt, objectives_svm, objectives_mvo, penalty_hist = \
                     model_instance.solve_adm(store_data=False, constrs=mvo_cons, svm_constrs=svm_cons,
