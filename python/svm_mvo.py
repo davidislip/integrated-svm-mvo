@@ -470,7 +470,7 @@ class MVO:
             self.model.optimize(callback=cbb)
         else:
             self.model.optimize()
-        self.model.write('portfolio_selection_optimization.lp')
+        #self.model.write('portfolio_selection_optimization.lp')
 
     def evaluate(self, realized_ret):
 
@@ -527,7 +527,7 @@ class SVM:
     def soft_penalty(self):
         n, m = self.exogenous.shape
         classes = np.unique(self.mvo_z)
-
+        self.mvo_z = np.rint(self.mvo_z)
         assert len(classes) == 2
 
         if self.class_weights is None:
@@ -631,12 +631,12 @@ class SVM:
             # print("decision boundary asset ", i, " value ", a_i)
             # print("slack ", i, " value ", self.xi[i].x)
             self.decision_boundary.append(a_i)
-        self.model.write('portfolio_selection_optimization.lp')
+        #self.model.write('portfolio_selection_optimization.lp')
 
 def get_mvo_class_weights(z):
     positive_class_weight = len(z) / z.sum()
     negative_class_weight = len(z) / (len(z) - z.sum())
-    classes = np.sort(np.unique(z))
+    classes = np.unique(np.rint(np.sort(z)))
     class_weights = {classes[0]: negative_class_weight, classes[1]: positive_class_weight}
     return class_weights
 
